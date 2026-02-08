@@ -1,0 +1,19 @@
+{
+  "name": "@appointments/docs",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "vitepress dev",
+    "build": "vitepress build",
+    "preview": "vitepress preview",
+    "clean": "rm -rf .vitepress/dist"
+  },
+  "dependencies": {
+    "vitepress": "^1.0.0-rc.40",
+    "vue": "^3.4.21"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "@types/node": "^20.11.17"
+  }
+}

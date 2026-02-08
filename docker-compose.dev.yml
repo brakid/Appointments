@@ -1,0 +1,78 @@
+# Docker Compose Development Environment
+
+version: '3.8'
+
+services:
+  # Frontend (Next.js)
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+    volumes:
+      - ./packages/frontend:/app/packages/frontend
+      - ./packages/shared:/app/packages/shared
+      - /app/node_modules
+    depends_on:
+      - db
+      - redis
+    command: npm run dev:frontend
+
+  # Backend (Fastify)
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: backend
+    ports:
+      - "3001:3001"
+    environment:
+      - DATABASE_URL=postgresql://postgres:password@db:5432/appointments
+      - REDIS_URL=redis://redis:6379
+      - NODE_ENV=development
+    volumes:
+      - ./packages/backend:/app/packages/backend
+      - ./packages/shared:/app/packages/shared
+      - /app/node_modules
+    depends_on:
+      - db
+      - redis
+    command: npm run dev:backend
+
+  # Database (PostgreSQL)
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: appointments
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./packages/backend/src/prisma/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  # Development Database Admin
+  adminer:
+    image: adminer
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+volumes:
+  postgres_data:
+  redis_data:
