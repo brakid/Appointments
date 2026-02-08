@@ -1,0 +1,73 @@
+name: PR Size and Complexity Check
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  pr-size-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate PR size
+        id: pr-size
+        run: |
+          # Get the number of lines added and deleted
+          lines_added=$(git diff --numstat origin/${{ github.base_ref }}...HEAD | awk '{added += $1; deleted += $2} END {print added+deleted}')
+          files_changed=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | wc -l)
+          
+          echo "lines_changed=$lines_added" >> $GITHUB_OUTPUT
+          echo "files_changed=$files_changed" >> $GITHUB_OUTPUT
+          
+          echo "Lines changed: $lines_added"
+          echo "Files changed: $files_changed"
+
+      - name: Check PR size limits
+        run: |
+          LINES_CHANGED=${{ steps.pr-size.outputs.lines_changed }}
+          FILES_CHANGED=${{ steps.pr-size.outputs.files_changed }}
+          
+          # Set limits (adjust as needed)
+          MAX_LINES=500
+          MAX_FILES=20
+          
+          if [ $LINES_CHANGED -gt $MAX_LINES ]; then
+            echo "⚠️ Large PR detected: $LINES_CHANGED lines changed (limit: $MAX_LINES)"
+            echo "Consider breaking this into smaller PRs for easier review."
+          fi
+          
+          if [ $FILES_CHANGED -gt $MAX_FILES ]; then
+            echo "⚠️ Many files changed: $FILES_CHANGED files (limit: $MAX_FILES)"
+            echo "Consider breaking this into smaller, more focused PRs."
+          fi
+
+      - name: Comment on PR if too large
+        if: steps.pr-size.outputs.lines_changed > 500 || steps.pr-size.outputs.files_changed > 20
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const linesChanged = ${{ steps.pr-size.outputs.lines_changed }};
+            const filesChanged = ${{ steps.pr-size.outputs.files_changed }};
+            
+            const message = `
+            ## 📊 PR Size Analysis
+            
+            - **Lines Changed**: ${linesChanged}
+            - **Files Changed**: ${filesChanged}
+            
+            ${linesChanged > 500 ? '⚠️ **Large PR**: Consider breaking into smaller PRs for easier review.' : ''}
+            ${filesChanged > 20 ? '⚠️ **Many Files**: Consider making changes more focused.' : ''}
+            
+            This helps maintain code quality and makes reviews more effective.
+            `;
+            
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: message
+            });

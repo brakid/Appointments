@@ -1,0 +1,45 @@
+# Repository CODEOWNERS
+# This file defines individuals or teams that are responsible for code in this repository.
+# Code owners are automatically requested for review when someone opens a pull request
+# that modifies code they own.
+
+# Global owners for the entire repository
+* @brakid
+
+# Package-specific ownership
+packages/frontend/ @brakid
+packages/backend/ @brakid
+packages/shared/ @brakid
+packages/docs/ @brakid
+
+# Critical system files
+.github/ @brakid
+package.json @brakid
+projectspecs.md @brakid
+task-breakdown.md @brakid
+
+# Documentation files
+README.md @brakid
+*.md @brakid
+
+# Configuration files
+.env.example @brakid
+docker-compose*.yml @brakid
+*.json @brakid
+*.config.* @brakid
+
+# Database and migrations
+packages/backend/src/prisma/ @brakid
+
+# External integrations
+packages/backend/src/services/ @brakid
+
+# API routes and endpoints
+packages/backend/src/routes/ @brakid
+
+# UI components and pages
+packages/frontend/src/components/ @brakid
+packages/frontend/src/app/ @brakid
+
+# Shared types and utilities
+packages/shared/src/ @brakid

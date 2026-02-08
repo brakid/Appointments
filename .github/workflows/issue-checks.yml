@@ -1,0 +1,48 @@
+name: Issue Templates Configuration
+
+on:
+  issues:
+    types: [opened, reopened]
+
+jobs:
+  check-issue-template:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if issue follows template
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = context.payload.issue;
+            const body = issue.body || '';
+            
+            // Check for required sections
+            const requiredSections = ['## Description', '## Steps to reproduce', '## Expected behavior'];
+            const hasRequiredSections = requiredSections.every(section => body.includes(section));
+            
+            if (!hasRequiredSections && issue.state === 'open') {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                body: `
+                ## ❌ Issue Template Not Followed
+                
+                Please make sure your issue includes the following sections:
+                - **Description** - What the issue is about
+                - **Steps to reproduce** - How to reproduce the issue
+                - **Expected behavior** - What should happen
+                
+                Please edit your issue to follow the template. This helps us understand and address your issue more effectively.
+                
+                You can copy the template from the issue creation form.
+                `
+              });
+              
+              // Add label for tracking
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: issue.number,
+                labels: ['needs-template']
+              });
+            }

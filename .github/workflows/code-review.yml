@@ -1,0 +1,246 @@
+name: Code Review and Quality Gates
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [main, develop]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.changes.outputs.frontend }}
+      backend: ${{ steps.changes.outputs.backend }}
+      shared: ${{ steps.changes.outputs.shared }}
+      docs: ${{ steps.changes.outputs.docs }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect changed packages
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            frontend:
+              - 'packages/frontend/**'
+            backend:
+              - 'packages/backend/**'
+            shared:
+              - 'packages/shared/**'
+            docs:
+              - 'packages/docs/**'
+            root:
+              - 'package.json'
+              - '.github/**'
+              - '*.md'
+
+  install-dependencies:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+  lint:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, install-dependencies]
+    if: needs.detect-changes.outputs.root == 'true' || needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.shared == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint
+
+  type-check:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, install-dependencies]
+    if: needs.detect-changes.outputs.root == 'true' || needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.shared == 'true'
+    strategy:
+      matrix:
+        package: [frontend, backend, shared]
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check ${{ matrix.package }}
+        if: needs.detect-changes.outputs[matrix.package] == 'true' || needs.detect-changes.outputs.root == 'true'
+        run: npm run type-check --workspace=@appointments/${{ matrix.package }}
+
+  test:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, install-dependencies]
+    if: needs.detect-changes.outputs.root == 'true' || needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.shared == 'true'
+    strategy:
+      matrix:
+        package: [frontend, backend, shared]
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start services (for backend tests)
+        if: matrix.package == 'backend'
+        run: |
+          docker-compose -f docker-compose.dev.yml up -d db redis
+          sleep 10
+
+      - name: Test ${{ matrix.package }}
+        if: needs.detect-changes.outputs[matrix.package] == 'true' || needs.detect-changes.outputs.root == 'true'
+        run: |
+          if [ "${{ matrix.package }}" = "backend" ]; then
+            export DATABASE_URL="postgresql://postgres:password@localhost:5432/appointments"
+            export REDIS_URL="redis://localhost:6379"
+          fi
+          npm run test --workspace=@appointments/${{ matrix.package }}
+
+      - name: Stop services
+        if: matrix.package == 'backend'
+        run: docker-compose -f docker-compose.dev.yml down
+
+  build:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, install-dependencies]
+    if: needs.detect-changes.outputs.root == 'true' || needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.shared == 'true'
+    strategy:
+      matrix:
+        package: [frontend, backend, shared]
+      fail-fast: false
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build ${{ matrix.package }}
+        if: needs.detect-changes.outputs[matrix.package] == 'true' || needs.detect-changes.outputs.root == 'true'
+        run: npm run build --workspace=@appointments/${{ matrix.package }}
+
+  security-scan:
+    runs-on: ubuntu-latest
+    needs: [detect-changes, install-dependencies]
+    if: needs.detect-changes.outputs.root == 'true' || needs.detect-changes.outputs.frontend == 'true' || needs.detect-changes.outputs.backend == 'true' || needs.detect-changes.outputs.shared == 'true'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run security audit
+        run: npm audit --audit-level moderate
+
+      - name: Run CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+        with:
+          languages: javascript
+
+  check-milestone:
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: github.event.pull_request
+    steps:
+      - name: Check milestone assignment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const milestone = pr.milestone;
+            
+            if (!milestone) {
+              core.warning('PR is not assigned to a milestone. Please assign to appropriate milestone.');
+            } else {
+              core.info(`PR assigned to milestone: ${milestone.title}`);
+            }
+
+  notify-team:
+    runs-on: ubuntu-latest
+    needs: [lint, type-check, test, build]
+    if: always()
+    steps:
+      - name: Notify on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pr.number,
+              body: '❌ **CI Checks Failed**\n\nPlease review the failed checks and fix the issues before requesting review.'
+            });
+
+      - name: Notify on success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            
+            await github.rest.issues.createComment({
+              owner,
+              repo,
+              issue_number: pr.number,
+              body: '✅ **All CI Checks Passed**\n\nThe pull request is ready for code review.'
+            });
